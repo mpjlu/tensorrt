@@ -550,8 +550,96 @@ def get_frozen_graph(
 
     # Build graph and load weights
     frozen_graph = build_classification_graph(model, model_dir, default_models_dir)
+    
+    
     num_nodes['native_tf'] = len(frozen_graph.node)
     graph_sizes['native_tf'] = len(frozen_graph.SerializeToString())
+    
+    export_dir = './saved_model4/1'
+    graph_pb =  './graphs/frozen_graph_inception_v3_0_fp32_8.pb'
+    
+    ''' 
+    builder = tf.saved_model.builder.SavedModelBuilder(export_dir)
+
+    with tf.gfile.GFile(graph_pb, "rb") as f:
+        graph_def = tf.GraphDef()
+        graph_def.ParseFromString(f.read())
+
+    sigs = {}
+
+    with tf.Session(graph=tf.Graph()) as sess:
+                    # name="" is important to ensure we don't get spurious prefixing
+        tf.import_graph_def(graph_def, name="")
+        #tf.summary.FileWriter('inception_v3_event', sess.graph)
+        g = tf.get_default_graph()
+        inp = g.get_tensor_by_name("input:0")
+        out = g.get_tensor_by_name("ArgMax:0")
+        
+        print(inp)
+        print(out)
+        #worked version
+        prediction_signature = (
+            tf.saved_model.signature_def_utils.build_signature_def(
+              inputs={'image': tf.saved_model.utils.build_tensor_info(inp)},
+              outputs={'out':tf.saved_model.utils.build_tensor_info(out)},
+              method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME))
+
+        #legacy_init_op = tf.group(tf.tables.initializer(), name='legacy_init_op')
+
+        builder.add_meta_graph_and_variables(
+            sess, [tf.saved_model.tag_constants.SERVING],
+            signature_def_map={'predict_images':
+                               prediction_signature,
+                               })
+        builder.save()
+        
+        #Failed method 1:
+        
+        image_height_tensor = tf.placeholder(tf.int32)
+        image_width_tensor = tf.placeholder(tf.int32)
+        #placeholder for receiving the serialized input image
+        serialized_tf_example = tf.placeholder(tf.string, name='tf_example')
+        feature_configs = {'x': tf.FixedLenFeature(shape=[], dtype=tf.float32), }
+        tf_example = tf.parse_example(serialized_tf_example, feature_configs)
+
+        # reshape the input image to its original dimension
+        tf_example['x'] = tf.reshape(tf_example['x'], (1, image_height_tensor, image_width_tensor, 3))
+        x = tf.identity(tf_example['x'], name='x')  # use tf.identity() to assign name
+        inp = x
+        # perform inference on the input image
+
+        print('&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&')
+        print(inp)
+        print(out)
+
+        # Creates the TensorInfo protobuf objects that encapsulates the input/output tensors
+        tensor_info_input = tf.saved_model.utils.build_tensor_info(x)
+        tensor_info_height = tf.saved_model.utils.build_tensor_info(image_height_tensor)
+        tensor_info_width = tf.saved_model.utils.build_tensor_info(image_width_tensor)
+
+        # output tensor info
+        tensor_info_output = tf.saved_model.utils.build_tensor_info(out)
+
+        prediction_signature = (
+            tf.saved_model.signature_def_utils.build_signature_def(
+              inputs={'images': tensor_info_input, 'height': tensor_info_height, 'width': tensor_info_width},
+              outputs={'segmentation_map': tensor_info_output},
+              method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME))
+        builder.add_meta_graph_and_variables(
+            sess, [tf.saved_model.tag_constants.SERVING],
+            signature_def_map={'predict_images':
+                               prediction_signature,
+                               })
+        builder.save()
+        #failed version 2
+        sigs[tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY] = \
+        tf.saved_model.signature_def_utils.predict_signature_def(
+                {'images': tensor_info_input, 'height':tensor_info_height, 'width': tensor_info_width}, {"out": tensor_info_output})
+
+        builder.add_meta_graph_and_variables(sess,
+        [tf.saved_model.tag_constants.SERVING],
+        signature_def_map=sigs)
+        '''
 
     # Convert to TensorRT graph
     if use_trt:
@@ -590,6 +678,8 @@ def get_frozen_graph(
             print('INT8 graph created.')
 
     # Cache graph to avoid long conversions each time
+    print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
+    print(cache)
     if cache:
         if not os.path.exists(os.path.dirname(prebuilt_graph_path)):
             try:
